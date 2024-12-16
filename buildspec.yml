@@ -1,0 +1,41 @@
+version: 0.2
+
+env:
+  variables:
+    BUILD_GCC_VERSION: "14.2.0"
+phases:
+  install:
+    commands:
+      - echo Installing build environment...
+      - yum -y groupinstall "Development Tools"
+      - yum -y install openssl-devel
+      - dnf install -y rpmdevtools rpmlint
+  pre_build:
+    commands:
+      - echo Obtaining sources
+      - wget http://mirror.rit.edu/gnu/gcc/gcc-${BUILD_GCC_VERSION}/gcc-${BUILD_GCC_VERSION}.tar.gz
+      - tar -xzvf gcc-${BUILD_GCC_VERSION}.tar.gz
+      - mkdir -p build/
+      - mkdir -p /tmp/gcc-${BUILD_GCC_VERSION}
+      - mkdir -p dist/
+  build:
+    commands:
+      - echo  Building GCC ${BUILD_GCC_VERSION}...
+      - (cd ./gcc-${BUILD_GCC_VERSION} && exec ./contrib/download_prerequisites)
+      - (cd ./build && exec ../gcc-${BUILD_GCC_VERSION}/configure --enable-languages=c,c++ --build="$(arch)-amazon-linux")
+      - (cd ./build && exec make -j $(nproc --all))
+      - (cd ./build && exec make DESTDIR=/tmp/gcc-devel-${BUILD_GCC_VERSION} install)
+      - (cd /tmp/gcc-devel-${BUILD_GCC_VERSION} && mv usr/local/* .)
+      - (cd /tmp && tar --create --file gcc-devel-${BUILD_GCC_VERSION}.tar.gz gcc-devel-${BUILD_GCC_VERSION})
+  post_build:
+    commands:
+      - echo Packaging GCC into redistributable package...
+      - rpmdev-setuptree
+      - mv /tmp/gcc-devel-${BUILD_GCC_VERSION}.tar.gz ~/rpmbuild/SOURCES/.
+      - envsubst '${CODEBUILD_BUILD_NUMBER}' < gcc.spec > ~/rpmbuild/SPECS/gcc-devel.spec
+      - rpmbuild -bb ~/rpmbuild/SPECS/gcc-devel.spec
+      - cp -r ~/rpmbuild/RPMS/* ./dist/.
+artifacts:
+  files:
+    - '**/*'
+  base-directory: 'dist'
